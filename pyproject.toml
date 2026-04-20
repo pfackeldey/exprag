@@ -1,0 +1,30 @@
+[build-system]
+requires = ["maturin>=1.8,<2"]
+build-backend = "maturin"
+
+[project]
+name = "exprag"
+authors = [
+    { name = "Peter Fackeldey", email = "fackeldey.peter@gmail.com" },
+]
+description = "Experiment tracker made for LLM interaction."
+version = "0.1.0"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+readme = "README.md"
+requires-python = ">=3.10"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+exprag-skill = "exprag.agent.skills:main"
+
+[tool.maturin]
+bindings = "pyo3"
+python-source = "python"
+module-name = "exprag.exprag"
+exclude = ["python/**/__pycache__/*", "python/**/*.pyc"]
+
+[tool.pytest.ini_options]
+pythonpath = ["python"]

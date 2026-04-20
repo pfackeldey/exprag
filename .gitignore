@@ -1,0 +1,39 @@
+# Rust
+Cargo.lock
+/target/
+**/*.rs.bk
+
+# Python
+uv.lock
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# Build artifacts
+/dist/
+/build/
+*.egg-info/
+/python/exprag/*.so
+/python/exprag/*.pyd
+
+# Local exprag data
+/.exprag/
+/.opencode/
+
+# Local environment
+.env
+.env.*
+
+# OS/editor noise
+.DS_Store
+.idea/
+.vscode/
