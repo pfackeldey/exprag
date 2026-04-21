@@ -26,10 +26,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: PyO3/maturin-action@v1
-        with:
-          command: sdist
-          args: --out dist
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Build sdist
+        run: uv build --sdist --out-dir dist
 
       - uses: actions/upload-artifact@v7
         with:
@@ -39,36 +39,34 @@ jobs:
 
   wheels:
     runs-on: ${{ matrix.os }}
+    env:
+      CIBW_ARCHS: auto64
+      CIBW_BUILD: cp311-*
+      CIBW_BEFORE_ALL_LINUX: curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+      CIBW_ENVIRONMENT_LINUX: PATH="$HOME/.cargo/bin:$PATH"
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-15, macos-15-intel]
-        arch: [auto64]
-        include:
-          - os: windows-latest
-            target: auto64
-          - os: windows-latest
-            target: auto32
-          - os: ubuntu-24.04-arm
-            target: auto64
-          - os: windows-11-arm
-            target: auto64
+        os:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+          - macos-15
+          - macos-15-intel
+          - windows-latest
+          - windows-11-arm
 
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - uses: PyO3/maturin-action@v1
+      - uses: pypa/cibuildwheel@v3.4.1
         with:
-          target: ${{ matrix.target }}
-          args: --release --out dist --find-interpreter
-          manylinux: auto
-          sccache: true
+          output-dir: dist
 
       - uses: actions/upload-artifact@v7
         with:
-          name: Packages-${{ matrix.os }}-${{ matrix.target }}
+          name: Packages-${{ matrix.os }}
           path: dist/*
           if-no-files-found: error
 
