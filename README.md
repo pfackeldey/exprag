@@ -1,5 +1,9 @@
 # exprag
 
+[![PyPI version][pypi-version]][pypi-link]
+<!--[![Conda-Forge][conda-badge]][conda-link]-->
+[![PyPI platforms][pypi-platforms]][pypi-link]
+
 `exprag` is an experiment memory for coding agents with zero dependencies.
 
 It is intentionally small: one JSONL file per run, plus enough structured
@@ -133,3 +137,10 @@ So a prompt like this is meaningful:
 
 > "Find the run with the best validation accuracy, reconstruct the code from
 > that run, and show me the exact changes compared with my current checkout."
+
+
+<!--[conda-badge]: https://img.shields.io/conda/vn/conda-forge/exprag
+[conda-link]: https://github.com/conda-forge/exprag-feedstock-->
+[pypi-link]: https://pypi.org/project/exprag/
+[pypi-platforms]: https://img.shields.io/pypi/pyversions/exprag
+[pypi-version]: https://badge.fury.io/py/exprag.svg
