@@ -117,13 +117,19 @@ def test_describe_latest_runs_is_blind_runnable() -> None:
 def test_discover_value_paths_defaults_to_track_records() -> None:
     records = [
         {"kind": "run_start", "run_id": "run-a", "value": {"host": {"os": "macos"}}},
-        {"kind": "track", "run_id": "run-a", "value": {"metrics": {"accuracy": 0.9}}},
+        {
+            "kind": "track",
+            "run_id": "run-a",
+            "value": {"metrics": {"accuracy": 0.9}},
+            "note": "validation accuracy",
+        },
     ]
 
     paths = {item["path"]: item for item in discover_value_paths(records)}
 
     assert "value.metrics.accuracy" in paths
     assert "value.host.os" not in paths
+    assert "note" not in paths
 
 
 def test_discover_value_paths_can_scan_all_record_kinds() -> None:

@@ -8,6 +8,7 @@ use std::fs::{create_dir_all, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
+use std::time::Instant;
 use uuid::Uuid;
 
 #[pyclass]
@@ -15,6 +16,7 @@ struct Experiment {
     run_id: String,
     name: String,
     path: PathBuf,
+    started_at: Instant,
 }
 
 #[pymethods]
@@ -30,7 +32,12 @@ impl Experiment {
         let path = run_path(&run_id)?;
         let metadata = metadata.map(py_to_json).transpose()?;
 
-        let experiment = Self { run_id, name, path };
+        let experiment = Self {
+            run_id,
+            name,
+            path,
+            started_at: Instant::now(),
+        };
         experiment.write_run_start(metadata)?;
         Ok(experiment)
     }
@@ -50,16 +57,24 @@ impl Experiment {
         self.path.display().to_string()
     }
 
-    fn track(&self, value: &Bound<'_, PyAny>) -> PyResult<()> {
+    #[pyo3(signature = (value, note = None))]
+    fn track(&self, value: &Bound<'_, PyAny>, note: Option<String>) -> PyResult<()> {
         let value = py_to_json(value)?;
-        let record = json!({
+        let mut record = json!({
             "schema_version": 1,
             "run_id": self.run_id,
             "experiment_name": self.name,
             "kind": "track",
             "value": value,
             "created_at": Utc::now().to_rfc3339(),
+            "elapsed_ms": self.elapsed_ms(),
         });
+        if let Some(note) = note {
+            record
+                .as_object_mut()
+                .expect("track record must be a JSON object")
+                .insert("note".to_string(), JsonValue::String(note));
+        }
 
         append_jsonl(&self.path, &record)
     }
@@ -92,6 +107,10 @@ fn append_jsonl(path: &PathBuf, value: &JsonValue) -> PyResult<()> {
 }
 
 impl Experiment {
+    fn elapsed_ms(&self) -> u64 {
+        u64::try_from(self.started_at.elapsed().as_millis()).unwrap_or(u64::MAX)
+    }
+
     fn write_run_start(&self, metadata: Option<JsonValue>) -> PyResult<()> {
         let cwd = env::current_dir()
             .ok()
@@ -124,6 +143,7 @@ impl Experiment {
             "kind": "run_start",
             "value": value,
             "created_at": Utc::now().to_rfc3339(),
+            "elapsed_ms": self.elapsed_ms(),
         });
 
         append_jsonl(&self.path, &record)

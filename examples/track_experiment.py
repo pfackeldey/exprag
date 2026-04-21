@@ -1,5 +1,4 @@
-"""Track a small example experiment with exprag.
-"""
+"""Track a small example experiment with exprag."""
 
 from __future__ import annotations
 

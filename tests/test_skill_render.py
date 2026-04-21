@@ -16,6 +16,10 @@ def test_skill_markdown_renders_frontmatter() -> None:
     assert "import exprag.agent.skills as exprag" in markdown
     assert "exprag.describe_value_paths(records" in markdown
     assert "returns records, not runs" in markdown
+    assert "reconstruct the run's code" in markdown
+    assert "top-level `note`" in markdown
+    assert "elapsed_ms" in markdown
+    assert "within-run timing" in markdown
 
 
 def test_skill_cli_prints_markdown(capsys) -> None:
