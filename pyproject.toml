@@ -12,13 +12,33 @@ version = "0.1.0"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 readme = "README.md"
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering",
+    "Typing :: Typed",
+]
 requires-python = ">=3.10"
 
-[project.optional-dependencies]
-dev = ["pytest>=8"]
+[project.urls]
+Homepage = "https://github.com/pfackeldey/exprag"
+Issues = "https://github.com/pfackeldey/exprag/issues"
 
 [project.scripts]
 exprag-skill = "exprag.agent.skills:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
 
 [tool.maturin]
 bindings = "pyo3"

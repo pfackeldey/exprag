@@ -34,7 +34,7 @@ The result is a lightweight loop:
 ## Install For Local Development
 
 ```bash
-uv pip install -e .
+uv pip install -e . --group=dev
 ```
 
 ## Create Agent-Readable Experiment Memory
