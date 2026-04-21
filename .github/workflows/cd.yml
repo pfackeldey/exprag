@@ -19,7 +19,16 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check versions
+        run: python tools/check_versions.py
+
   sdist:
+    needs: [check]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -38,6 +47,7 @@ jobs:
           if-no-files-found: error
 
   wheels:
+    needs: [check]
     runs-on: ${{ matrix.os }}
     env:
       CIBW_ARCHS: auto64
