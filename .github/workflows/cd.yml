@@ -42,17 +42,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-15, macos-15-intel]
+        arch: [auto64]
         include:
-          - os: ubuntu-latest
-            target: x86_64
-          - os: ubuntu-latest
-            target: aarch64
-          - os: macos-13
-            target: x86_64
-          - os: macos-14
-            target: aarch64
           - os: windows-latest
-            target: x64
+            target: auto64
+          - os: windows-latest
+            target: auto32
+          - os: ubuntu-24.04-arm
+            target: auto64
+          - os: windows-11-arm
+            target: auto64
 
     steps:
       - uses: actions/checkout@v6
