@@ -35,6 +35,12 @@ The result is a lightweight loop:
 3. Let an agent inspect `.exprag/runs/*.jsonl`.
 4. Ask the agent to compare, explain, or roll code back to any run.
 
+## Install
+
+```bash
+uv pip install exprag
+```
+
 ## Install For Local Development
 
 ```bash
