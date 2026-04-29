@@ -61,6 +61,9 @@ HELPER_NAMES = [
     "get_path",
     "select_values",
     "latest_records",
+    "describe_git_states",
+    "git_checkout_command",
+    "git_diff_between_runs",
 ]
 
 
@@ -514,6 +517,130 @@ def latest_records(
     )[-n:]
 
 
+def _get_git_info(records: Iterable[Mapping[str, Any]], run_id: str) -> Dict[str, Any]:
+    """Extract git state from a run's run_start record."""
+
+    for record in records:
+        if record.get("run_id") == run_id and record.get("kind") == "run_start":
+            git = record.get("value", {}).get("git") or {}
+            if git and git != "null" and isinstance(git, dict):
+                return dict(git)
+    return {}
+
+
+def describe_git_states(records: Iterable[Mapping[str, Any]]) -> str:
+    """Return a stable tab-separated summary of git state for every run.
+
+    Columns: run_id, experiment_name, commit, branch, dirty, snapshot_branch.
+    Use this first when the user asks about code versions, reproducibility,
+    or which runs have snapshot branches available.
+    """
+
+    seen: set = set()
+    rows = []
+    for record in records:
+        if record.get("kind") != "run_start":
+            continue
+        run_id = str(record.get("run_id") or "<missing>")
+        if run_id in seen:
+            continue
+        seen.add(run_id)
+
+        git = record.get("value", {}).get("git") or {}
+        if not git or git == "null" or not isinstance(git, dict):
+            continue
+
+        rows.append(
+            {
+                "run_id": run_id,
+                "experiment_name": record.get("experiment_name", ""),
+                "commit": git.get("commit") or "",
+                "branch": git.get("branch") or "",
+                "dirty": git.get("dirty", False),
+                "snapshot_branch": git.get("run_branch") or "",
+            }
+        )
+
+    if not rows:
+        return "No git state found in run_start records."
+
+    lines = ["run_id\texperiment_name\tcommit\tbranch\tdirty\tsnapshot_branch"]
+    for row in rows:
+        lines.append(
+            "\t".join(
+                [
+                    _format_cell(row["run_id"]),
+                    _format_cell(row["experiment_name"]),
+                    _format_cell(row["commit"]),
+                    _format_cell(row["branch"]),
+                    _format_cell(row["dirty"]),
+                    _format_cell(row["snapshot_branch"]),
+                ]
+            )
+        )
+    return "\n".join(lines)
+
+
+def git_checkout_command(run_id: str, records: Iterable[Mapping[str, Any]]) -> str:
+    """Return the exact git command to recreate a run's code state.
+
+    Prefers the snapshot branch (run/<uuid>) when dirty=true, falling back to
+    the base commit hash otherwise. Use this when the user wants to switch
+    their repo to a run's exact code state.
+    """
+
+    git = _get_git_info(records, run_id)
+    if not git:
+        return f"Run '{run_id}' has no git state recorded."
+
+    snapshot = git.get("run_branch")
+    commit = git.get("commit")
+
+    if snapshot:
+        return f"git checkout {snapshot}\n# Snapshot includes uncommitted changes from the original run."
+
+    if commit:
+        return f"git checkout {commit}\n# Run was clean; this is the exact commit that was checked out."
+
+    return f"Run '{run_id}' has no recoverable git reference."
+
+
+def git_diff_between_runs(
+    from_run_id: str,
+    to_run_id: str,
+    records: Iterable[Mapping[str, Any]],
+    mode: str = "diff",
+) -> str:
+    """Return a git command to compare code between two runs.
+
+    mode="diff" produces `git diff` (shows file-level changes).
+    mode="log" produces `git log --oneline` (shows commit history between).
+    Use this when the user asks "what changed between run A and run B?"
+
+    Snapshot branches (run/*) are always preferred when available; they
+    include uncommitted changes from the original machine.
+    """
+
+    from_git = _get_git_info(records, from_run_id)
+    to_git = _get_git_info(records, to_run_id)
+
+    if not from_git:
+        return f"Run '{from_run_id}' has no git state recorded."
+    if not to_git:
+        return f"Run '{to_run_id}' has no git state recorded."
+
+    from_ref = from_git.get("run_branch") or from_git.get("commit", "")
+    to_ref = to_git.get("run_branch") or to_git.get("commit", "")
+
+    if not from_ref or not to_ref:
+        return "One or both runs lack a recoverable git reference."
+
+    if mode == "log":
+        return f"git log --oneline {from_ref}..{to_ref}"
+
+    return f"git diff {from_ref}..{to_ref}"
+
+
 def _format_cell(value: Any) -> str:
     if value is None:
         return ""
@@ -550,13 +677,16 @@ def render_skill_markdown() -> str:
         "3. Print `exprag.describe_runs(records)` first to understand which runs exist.",
         "4. Use `exprag.describe_latest_runs(records, n=2)` when the user asks for the latest runs; `latest_records` returns records, not runs.",
         '5. Print `exprag.describe_value_paths(records)` or `exprag.describe_value_paths(records, contains="acc")` to inspect tracked JSON fields from `kind == "track"` records.',
-        "6. When helpful, use the `run_start` git state to reconstruct the run's code and inspect source directly; clearly label code-derived details as inferred context.",
-        "7. Read top-level `note` on `track` records as user-provided semantic context, such as metric meaning, split, unit, or aggregation; do not treat it as a JSON value path.",
-        "8. Use `elapsed_ms` for within-run timing and ordering; use `created_at` for wall-clock comparisons across runs.",
-        "9. Use `exprag.select_values(records, path)` only after choosing an exact path from `describe_value_paths`.",
-        "10. Use `exprag.track_records(records)` and `exprag.run_start_records(records)` instead of hand-written kind filters.",
-        "11. Use plain Python plus `exprag.records_between`, `exprag.get_path`, `exprag.select_values`, and `exprag.latest_records` to answer the user's specific question.",
-        "12. Cite `_source_path` and `_line_number` when making claims about a run.",
+        "6. Print `exprag.describe_git_states(records)` when the user asks about code versions, reproducibility, or wants to reconstruct a run's state.",
+        "7. Use `exprag.git_checkout_command(run_id, records)` to get the exact `git checkout` command for a run's code state (prefers snapshot branches when dirty).",
+        '8. Use `exprag.git_diff_between_runs(from_id, to_id, records)` when the user asks "what changed between run A and run B?"',
+        "9. When helpful, inspect the `run_start` git state directly and reconstruct the run's code; clearly label code-derived details as inferred context.",
+        "10. Read top-level `note` on `track` records as user-provided semantic context, such as metric meaning, split, unit, or aggregation; do not treat it as a JSON value path.",
+        "11. Use `elapsed_ms` for within-run timing and ordering; use `created_at` for wall-clock comparisons across runs.",
+        "12. Use `exprag.select_values(records, path)` only after choosing an exact path from `describe_value_paths`.",
+        "13. Use `exprag.track_records(records)` and `exprag.run_start_records(records)` instead of hand-written kind filters.",
+        "14. Use plain Python plus `exprag.records_between`, `exprag.get_path`, `exprag.select_values`, and `exprag.latest_records` to answer the user's specific question.",
+        "15. Cite `_source_path` and `_line_number` when making claims about a run.",
         "",
         "## Example",
         "",

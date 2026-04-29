@@ -62,6 +62,7 @@ impl Experiment {
         let value = py_to_json(value)?;
         let mut record = json!({
             "schema_version": 1,
+            "exprag_version": env!("CARGO_PKG_VERSION"),
             "run_id": self.run_id,
             "experiment_name": self.name,
             "kind": "track",
@@ -119,8 +120,9 @@ impl Experiment {
             .map(|arg| arg.to_string_lossy().into_owned())
             .collect::<Vec<_>>();
 
+        let git_info = git_state(&self.run_id);
         let mut value = json!({
-            "git": git_state(),
+            "git": git_info,
             "host": host_state(),
             "process": {
                 "pid": std::process::id(),
@@ -138,6 +140,7 @@ impl Experiment {
 
         let record = json!({
             "schema_version": 1,
+            "exprag_version": env!("CARGO_PKG_VERSION"),
             "run_id": self.run_id,
             "experiment_name": self.name,
             "kind": "run_start",
@@ -177,19 +180,100 @@ fn parent_process_id() -> Option<u32> {
     None
 }
 
-fn git_state() -> JsonValue {
+fn git_state(run_id: &str) -> JsonValue {
     if git_output(&["rev-parse", "--is-inside-work-tree"]).as_deref() != Some("true") {
         return JsonValue::Null;
     }
 
-    let status = git_output(&["status", "--porcelain"]).unwrap_or_default();
+    let head = git_output(&["rev-parse", "HEAD"]).unwrap_or_default();
+    let branch = git_output(&["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default();
+    let dirty = is_dirty();
+
+    let run_commit = dirty
+        .then(|| snapshot_run_commit(run_id, &head))
+        .flatten();
+    let run_branch = run_commit.as_ref().map(|_| format!("run/{run_id}"));
+
     json!({
-        "commit": git_output(&["rev-parse", "HEAD"]),
-        "branch": git_output(&["rev-parse", "--abbrev-ref", "HEAD"]),
-        "dirty": !status.is_empty(),
-        "status": status,
-        "diff": git_output(&["diff", "--no-ext-diff", "HEAD"]).unwrap_or_default(),
+        "commit": head,
+        "branch": branch,
+        "dirty": dirty,
+        "run_commit": run_commit,
+        "run_branch": run_branch,
     })
+}
+
+fn is_dirty() -> bool {
+    git_output(&["status", "--porcelain", "--ignore-submodules"])
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false)
+}
+
+/// Create a clean, non-destructive snapshot branch for this run.
+fn snapshot_run_commit(run_id: &str, head: &str) -> Option<String> {
+    let git_dir = git_output(&["rev-parse", "--git-dir"])?;
+    let work_tree = git_output(&["rev-parse", "--show-toplevel"])?;
+    let exprag_dir = env::var("EXPRAG_DIR").unwrap_or_else(|_| ".exprag".to_string());
+    let exprag_root = std::path::Path::new(&exprag_dir);
+    let exprag_relative = if exprag_root.is_absolute() {
+        exprag_root
+            .strip_prefix(&work_tree)
+            .unwrap_or(exprag_root)
+            .to_string_lossy()
+            .into_owned()
+    } else {
+        exprag_root.to_string_lossy().into_owned()
+    };
+
+    let index_file = std::env::temp_dir().join(format!("exprag-{run_id}.index"));
+
+    // helper to run git with a temporary index so HEAD never moves
+    let git = |args: &[&str]| -> Option<String> {
+        let mut cmd = Command::new("git");
+        cmd.args(args)
+            .env("GIT_INDEX_FILE", &index_file)
+            .env("GIT_DIR", &git_dir)
+            .env("GIT_WORK_TREE", &work_tree);
+        let output = cmd.output().ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        Some(String::from_utf8_lossy(&output.stdout).trim_end().to_string())
+    };
+
+    git(&["read-tree", head])?;
+    git(&["add", "--all"])?;
+
+    let exprag_in_worktree = exprag_root.is_absolute()
+        .then(|| exprag_root.strip_prefix(&work_tree).is_ok())
+        .unwrap_or(true);
+    if exprag_in_worktree {
+        // Ensure exprag's own run records never leak into the snapshot
+        git(&["reset", "--quiet", "--", &exprag_relative])?;
+    }
+
+    let tree = git(&["write-tree"])?;
+
+    // If .exprag/ was the only dirty thing, tree == HEAD and there's nothing
+    // meaningful to snapshot. Use plain git_output to avoid the temp index env.
+    let head_tree = git_output(&["rev-parse", &format!("{}^{{tree}}", head)])?;
+    if tree == head_tree {
+        return None;
+    }
+
+    let msg = format!("exprag: snapshot run {run_id}");
+    let commit = git(&["commit-tree", &tree, "-p", head, "-m", &msg])?;
+
+    let branch = format!("run/{run_id}");
+    // update-ref doesn't need the temp env, but we reuse the command builder
+    git(&[
+        "update-ref",
+        &format!("refs/heads/{branch}"),
+        &commit,
+    ])?;
+
+    let _ = std::fs::remove_file(&index_file);
+    Some(commit)
 }
 
 fn git_output(args: &[&str]) -> Option<String> {

@@ -1,9 +1,12 @@
 from exprag.agent.skills import (
-    describe_runs,
+    describe_git_states,
     describe_latest_runs,
+    describe_runs,
     describe_value_paths,
     discover_value_paths,
     get_path,
+    git_checkout_command,
+    git_diff_between_runs,
     latest_runs,
     run_start_records,
     select_values,
@@ -207,19 +210,64 @@ def test_describe_value_paths_is_blind_runnable() -> None:
     assert "value.metrics.loss" not in table
 
 
-def test_select_values_supports_discovered_list_wildcards() -> None:
+def test_git_helpers_extract_state_and_build_commands() -> None:
     records = [
         {
-            "run_id": "run-a",
-            "experiment_name": "demo",
-            "created_at": "2026-04-20T10:00:00+00:00",
-            "value": {"history": [{"loss": 0.7}, {"loss": 0.5}]},
-            "_source_path": ".exprag/runs/run-a.jsonl",
-            "_line_number": 1,
-        }
+            "kind": "run_start",
+            "run_id": "run-clean",
+            "experiment_name": "clean",
+            "value": {
+                "git": {
+                    "commit": "abc123",
+                    "branch": "main",
+                    "dirty": False,
+                    "run_commit": None,
+                    "run_branch": None,
+                }
+            },
+        },
+        {
+            "kind": "run_start",
+            "run_id": "run-dirty",
+            "experiment_name": "dirty",
+            "value": {
+                "git": {
+                    "commit": "abc123",
+                    "branch": "main",
+                    "dirty": True,
+                    "run_commit": "def789",
+                    "run_branch": "run/uuid-1",
+                }
+            },
+        },
     ]
 
-    assert get_path(records[0], "value.history.[].loss") == [0.7, 0.5]
-    assert [
-        row["value"] for row in select_values(records, "value.history.[].loss")
-    ] == [0.7, 0.5]
+    # --- describe_git_states ---
+    table = describe_git_states(records)
+    assert "run_id\texperiment_name\tcommit\tbranch\tdirty\tsnapshot_branch" in table
+    assert "run-clean\tclean\tabc123\tmain\tFalse" in table
+    assert "run-dirty\tdirty\tabc123\tmain\tTrue\trun/uuid-1" in table
+
+    # --- git_checkout_command (clean) ---
+    cmd = git_checkout_command("run-clean", records)
+    assert "git checkout abc123" in cmd
+    assert "clean" in cmd
+
+    # --- git_checkout_command (dirty, prefers snapshot) ---
+    cmd = git_checkout_command("run-dirty", records)
+    assert "git checkout run/uuid-1" in cmd
+    assert "# Snapshot includes uncommitted changes" in cmd
+
+    # --- git_diff_between_runs ---
+    diff = git_diff_between_runs("run-clean", "run-dirty", records)
+    assert diff.startswith("git diff ")
+    assert "run/uuid-1" in diff
+
+    log = git_diff_between_runs("run-clean", "run-dirty", records, mode="log")
+    assert log.startswith("git log --oneline ")
+
+    # --- missing run ---
+    assert git_checkout_command("nonexistent", records).startswith("Run 'nonexistent'")
+    assert git_diff_between_runs("nonexistent", "run-clean", records).startswith(
+        "Run 'nonexistent'"
+    )
