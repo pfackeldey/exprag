@@ -24,9 +24,9 @@ Ask things like:
 > "Restore the repository to the code state from the run with the lowest loss."
 
 Every run records git state at startup: commit, branch, dirty status, status
-output, and the working-tree diff. That means an agent can reconstruct not only
-the checked-in commit, but also the uncommitted edits that existed when the run
-was made.
+output. For dirty repositories, exprag creates a dedicated `run/<uuid>` branch
+that captures the exact commit *plus* any uncommitted edits that existed when
+the run started. That means an agent can always reconstruct the true code state.
 
 The result is a lightweight loop:
 
@@ -108,14 +108,18 @@ exprag-skill --write .opencode/skills/exprag/SKILL.md
 Then ask your agent questions in terms of outcomes, not files:
 
 > "Which run in the last two weeks has the highest accuracy?"
-
+>
+> "Show me the git diff between the two latest runs."
+>
 > "Which learning rates result in accuracies above 90%?"
-
+>
 > "Compare the best run against the latest run."
-
+>
 > "Show the metric history for the run where batch size was 32."
-
-> "Restore the code back to the run that achieved the highest accuracy."
+>
+> "Restore the code to the state from the run that achieved the highest accuracy."
+>
+> "Check out the exact code for run X."
 
 ## Code-State Rollback
 
@@ -124,25 +128,23 @@ The powerful part is that exprag captures git context per run.
 A `run_start` record includes enough information for an agent to reason about
 the source tree at experiment time:
 
-- current commit
-- current branch
-- whether the worktree was dirty
-- `git status --porcelain`
-- `git diff --no-ext-diff HEAD`
+- `commit`: the commit to check out (snapshot commit for dirty runs, HEAD for clean)
+- `branch`: the branch to check out (`run/<uuid>` for dirty runs, original branch for clean)
+- `dirty`: whether the worktree had uncommitted changes
 - process cwd and argv
 
 That lets an agent perform a workflow like:
 
 1. Find the run with the best metric.
 2. Read its `run_start` git state.
-3. Check out the recorded commit.
-4. Reapply the recorded dirty diff if needed.
-5. Verify that the repository matches the code that produced the run.
+3. `git checkout <branch>` always works — branch is either `run/<uuid>` (dirty) or the original branch (clean).
+4. Compare with `git diff` between any two runs.
+5. To get the base commit for a dirty run: `git log --oneline -1 <commit>^`.
 
 So a prompt like this is meaningful:
 
 > "Find the run with the best validation accuracy, reconstruct the code from
-> that run, and show me the exact changes compared with my current checkout."
+> that run, and show me the exact code changes compared with my current checkout."
 
 
 <!--[conda-badge]: https://img.shields.io/conda/vn/conda-forge/exprag

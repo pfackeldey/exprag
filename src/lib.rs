@@ -189,17 +189,19 @@ fn git_state(run_id: &str) -> JsonValue {
     let branch = git_output(&["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default();
     let dirty = is_dirty();
 
-    let run_commit = dirty
-        .then(|| snapshot_run_commit(run_id, &head))
-        .flatten();
-    let run_branch = run_commit.as_ref().map(|_| format!("run/{run_id}"));
+    let (commit, branch) = if dirty {
+        match snapshot_run_commit(run_id, &head) {
+            Some(snap) => (snap, format!("run/{run_id}")),
+            None => (head, branch),  // snapshot skipped (only .exprag dirty)
+        }
+    } else {
+        (head, branch)
+    };
 
     json!({
-        "commit": head,
+        "commit": commit,
         "branch": branch,
         "dirty": dirty,
-        "run_commit": run_commit,
-        "run_branch": run_branch,
     })
 }
 

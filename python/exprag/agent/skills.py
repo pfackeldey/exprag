@@ -531,7 +531,7 @@ def _get_git_info(records: Iterable[Mapping[str, Any]], run_id: str) -> Dict[str
 def describe_git_states(records: Iterable[Mapping[str, Any]]) -> str:
     """Return a stable tab-separated summary of git state for every run.
 
-    Columns: run_id, experiment_name, commit, branch, dirty, snapshot_branch.
+    Columns: run_id, experiment_name, commit, branch, dirty.
     Use this first when the user asks about code versions, reproducibility,
     or which runs have snapshot branches available.
     """
@@ -557,14 +557,13 @@ def describe_git_states(records: Iterable[Mapping[str, Any]]) -> str:
                 "commit": git.get("commit") or "",
                 "branch": git.get("branch") or "",
                 "dirty": git.get("dirty", False),
-                "snapshot_branch": git.get("run_branch") or "",
             }
         )
 
     if not rows:
         return "No git state found in run_start records."
 
-    lines = ["run_id\texperiment_name\tcommit\tbranch\tdirty\tsnapshot_branch"]
+    lines = ["run_id\texperiment_name\tcommit\tbranch\tdirty"]
     for row in rows:
         lines.append(
             "\t".join(
@@ -574,7 +573,6 @@ def describe_git_states(records: Iterable[Mapping[str, Any]]) -> str:
                     _format_cell(row["commit"]),
                     _format_cell(row["branch"]),
                     _format_cell(row["dirty"]),
-                    _format_cell(row["snapshot_branch"]),
                 ]
             )
         )
@@ -584,25 +582,30 @@ def describe_git_states(records: Iterable[Mapping[str, Any]]) -> str:
 def git_checkout_command(run_id: str, records: Iterable[Mapping[str, Any]]) -> str:
     """Return the exact git command to recreate a run's code state.
 
-    Prefers the snapshot branch (run/<uuid>) when dirty=true, falling back to
-    the base commit hash otherwise. Use this when the user wants to switch
-    their repo to a run's exact code state.
+    For dirty runs the branch will be `run/<uuid>` (includes uncommitted changes).
+    For clean runs the branch is the original branch checked out at run start.
+    Use this when the user wants to switch their repo to a run's exact code state.
     """
 
     git = _get_git_info(records, run_id)
     if not git:
         return f"Run '{run_id}' has no git state recorded."
 
-    snapshot = git.get("run_branch")
+    branch = git.get("branch")
     commit = git.get("commit")
 
-    if snapshot:
-        return f"git checkout {snapshot}\n# Snapshot includes uncommitted changes from the original run."
+    if not branch or not commit:
+        return f"Run '{run_id}' has no recoverable git reference."
 
-    if commit:
-        return f"git checkout {commit}\n# Run was clean; this is the exact commit that was checked out."
+    # Snapshot branches start with "run/"
+    if isinstance(branch, str) and branch.startswith("run/"):
+        return (
+            f"git checkout {branch}\n"
+            f"# Snapshot includes uncommitted changes from the original run. "
+            f"The base commit is in the parent: git log --oneline -1 {commit}^"
+        )
 
-    return f"Run '{run_id}' has no recoverable git reference."
+    return f"git checkout {branch}\n# Run was clean at commit {commit}."
 
 
 def git_diff_between_runs(
@@ -629,8 +632,8 @@ def git_diff_between_runs(
     if not to_git:
         return f"Run '{to_run_id}' has no git state recorded."
 
-    from_ref = from_git.get("run_branch") or from_git.get("commit", "")
-    to_ref = to_git.get("run_branch") or to_git.get("commit", "")
+    from_ref = from_git.get("commit", "")
+    to_ref = to_git.get("commit", "")
 
     if not from_ref or not to_ref:
         return "One or both runs lack a recoverable git reference."

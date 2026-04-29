@@ -221,8 +221,6 @@ def test_git_helpers_extract_state_and_build_commands() -> None:
                     "commit": "abc123",
                     "branch": "main",
                     "dirty": False,
-                    "run_commit": None,
-                    "run_branch": None,
                 }
             },
         },
@@ -232,11 +230,9 @@ def test_git_helpers_extract_state_and_build_commands() -> None:
             "experiment_name": "dirty",
             "value": {
                 "git": {
-                    "commit": "abc123",
-                    "branch": "main",
+                    "commit": "def789",
+                    "branch": "run/uuid-1",
                     "dirty": True,
-                    "run_commit": "def789",
-                    "run_branch": "run/uuid-1",
                 }
             },
         },
@@ -244,24 +240,24 @@ def test_git_helpers_extract_state_and_build_commands() -> None:
 
     # --- describe_git_states ---
     table = describe_git_states(records)
-    assert "run_id\texperiment_name\tcommit\tbranch\tdirty\tsnapshot_branch" in table
+    assert "run_id\texperiment_name\tcommit\tbranch\tdirty" in table
     assert "run-clean\tclean\tabc123\tmain\tFalse" in table
-    assert "run-dirty\tdirty\tabc123\tmain\tTrue\trun/uuid-1" in table
+    assert "run-dirty\tdirty\tdef789\trun/uuid-1\tTrue" in table
 
     # --- git_checkout_command (clean) ---
     cmd = git_checkout_command("run-clean", records)
-    assert "git checkout abc123" in cmd
-    assert "clean" in cmd
+    assert "git checkout main" in cmd
+    assert "clean at commit abc123" in cmd
 
-    # --- git_checkout_command (dirty, prefers snapshot) ---
+    # --- git_checkout_command (dirty, branch is snapshot) ---
     cmd = git_checkout_command("run-dirty", records)
     assert "git checkout run/uuid-1" in cmd
-    assert "# Snapshot includes uncommitted changes" in cmd
+    assert "git log --oneline -1 def789^" in cmd
 
     # --- git_diff_between_runs ---
     diff = git_diff_between_runs("run-clean", "run-dirty", records)
     assert diff.startswith("git diff ")
-    assert "run/uuid-1" in diff
+    assert "def789" in diff
 
     log = git_diff_between_runs("run-clean", "run-dirty", records, mode="log")
     assert log.startswith("git log --oneline ")
