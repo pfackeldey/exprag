@@ -8,7 +8,7 @@ authors = [
     { name = "Peter Fackeldey", email = "fackeldey.peter@gmail.com" },
 ]
 description = "Experiment tracker made for LLM interaction."
-version = "0.1.0"
+version = "0.1.1"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 readme = "README.md"
